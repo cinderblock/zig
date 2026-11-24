@@ -113,6 +113,9 @@ pagezero_size: ?u64,
 headerpad_size: ?u32,
 /// Set enough space as if all paths were MATPATHLEN.
 headerpad_max_install_names: bool,
+/// Emit a bundle (MH_BUNDLE, loaded with dlopen, no install name) instead of a dylib.
+/// Only set when the output is a dynamic library.
+bundle: bool,
 /// Remove dylibs that are unreachable by the entry point or exported symbols.
 dead_strip_dylibs: bool,
 /// Treatment of undefined symbols
@@ -191,6 +194,7 @@ pub fn createEmpty(
         .pagezero_size = options.pagezero_size,
         .headerpad_size = options.headerpad_size,
         .headerpad_max_install_names = options.headerpad_max_install_names,
+        .bundle = options.macho_bundle and output_mode == .Lib and link_mode == .dynamic,
         .dead_strip_dylibs = options.dead_strip_dylibs,
         .install_name = options.install_name,
         .entitlements = options.entitlements,
@@ -579,7 +583,9 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
             try argv.append(arena, "-dynamic");
         }
 
-        if (self.base.isDynLib()) {
+        if (self.bundle) {
+            try argv.append(arena, "-bundle");
+        } else if (self.base.isDynLib()) {
             try argv.append(arena, "-dylib");
 
             if (self.install_name) |install_name| {
@@ -2783,7 +2789,8 @@ fn writeLoadCommands(self: *MachO) !struct { usize, usize, u64 } {
         }
     }
 
-    if (self.base.isDynLib()) {
+    // A bundle has no install name: nothing links against it, it is only dlopen'ed.
+    if (self.base.isDynLib() and !self.bundle) {
         try load_commands.writeDylibIdLC(self, &writer);
         ncmds += 1;
     }
@@ -2877,7 +2884,9 @@ fn writeHeader(self: *MachO, ncmds: usize, sizeofcmds: usize) !void {
         else => {},
     }
 
-    if (self.base.isDynLib()) {
+    if (self.bundle) {
+        header.filetype = macho.MH_BUNDLE;
+    } else if (self.base.isDynLib()) {
         header.filetype = macho.MH_DYLIB;
     } else {
         header.filetype = macho.MH_EXECUTE;

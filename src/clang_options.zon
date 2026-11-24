@@ -847,7 +847,7 @@
 .{ .name = "aux-triple", .syntax = .separate },
 .{ .name = "bind_at_load" },
 .{ .name = "building-pch-with-obj" },
-.{ .name = "bundle" },
+.{ .name = "bundle", .ze = .bundle },
 .{ .name = "bundle_loader", .syntax = .separate },
 .{ .name = "c", .ze = .c },
 .{ .name = "c-isystem", .syntax = .separate },

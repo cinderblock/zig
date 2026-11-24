@@ -497,6 +497,8 @@ pub const File = struct {
         headerpad_size: ?u32,
         /// Set enough space as if all paths were MATPATHLEN
         headerpad_max_install_names: bool,
+        /// Emit a bundle (MH_BUNDLE) instead of a dylib; requires a dynamic library output
+        macho_bundle: bool,
         /// Remove dylibs that are unreachable by the entry point or exported symbols
         dead_strip_dylibs: bool,
         /// Force load all members of static archives that implement an

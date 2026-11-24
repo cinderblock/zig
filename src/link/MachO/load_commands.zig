@@ -51,8 +51,8 @@ pub fn calcLoadCommandsSize(macho_file: *MachO, assume_max_path_len: bool) !u32 
     if (!macho_file.base.isDynLib()) {
         sizeofcmds += @sizeOf(macho.entry_point_command);
     }
-    // LC_ID_DYLIB
-    if (macho_file.base.isDynLib()) {
+    // LC_ID_DYLIB (a bundle has none)
+    if (macho_file.base.isDynLib() and !macho_file.bundle) {
         const emit = macho_file.base.emit;
         const install_name = macho_file.install_name orelse
             try emit.root_dir.join(gpa, &.{emit.sub_path});

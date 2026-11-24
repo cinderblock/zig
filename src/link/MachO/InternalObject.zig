@@ -114,7 +114,9 @@ pub fn initSymbols(self: *InternalObject, macho_file: *MachO) !void {
             .desc = macho.REFERENCED_DYNAMICALLY,
         });
     } else {
-        self.mh_dylib_header_index = newSymbolAssumeCapacity(self, try self.addString(gpa, "__mh_dylib_header"), .{
+        // ld64 names the header symbol of a bundle __mh_bundle_header.
+        const header_name = if (macho_file.bundle) "__mh_bundle_header" else "__mh_dylib_header";
+        self.mh_dylib_header_index = newSymbolAssumeCapacity(self, try self.addString(gpa, header_name), .{
             .type = macho.N_SECT | macho.N_EXT,
         });
     }

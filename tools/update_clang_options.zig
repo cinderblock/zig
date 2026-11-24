@@ -535,6 +535,10 @@ const known_options = [_]KnownOpt{
         .ident = "headerpad_max_install_names",
     },
     .{
+        .name = "bundle",
+        .ident = "bundle",
+    },
+    .{
         .name = "compress-debug-sections",
         .ident = "compress_debug_sections",
     },

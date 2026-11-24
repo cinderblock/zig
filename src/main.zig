@@ -1017,6 +1017,7 @@ fn buildOutputType(
     var lib_preferred_mode: std.lang.LinkMode = .dynamic;
     var headerpad_size: ?u32 = null;
     var headerpad_max_install_names: bool = false;
+    var macho_bundle: bool = false;
     var dead_strip_dylibs: bool = false;
     var force_load_objc: bool = false;
     var discard_local_symbols: bool = false;
@@ -2549,6 +2550,13 @@ fn buildOutputType(
                         .weak = true,
                     } }),
                     .headerpad_max_install_names => headerpad_max_install_names = true,
+                    .bundle => {
+                        // A Mach-O bundle is a dynamically linked image that is
+                        // loaded with dlopen and has no install name.
+                        macho_bundle = true;
+                        create_module.opts.link_mode = .dynamic;
+                        is_shared_lib = true;
+                    },
                     .compress_debug_sections => {
                         if (it.only_arg.len == 0) {
                             linker_compress_debug_sections = .zlib;
@@ -2684,6 +2692,10 @@ fn buildOutputType(
                     };
                 } else if (mem.eql(u8, arg, "-headerpad_max_install_names")) {
                     headerpad_max_install_names = true;
+                } else if (mem.eql(u8, arg, "-bundle")) {
+                    macho_bundle = true;
+                    create_module.opts.link_mode = .dynamic;
+                    is_shared_lib = true;
                 } else if (mem.eql(u8, arg, "-dead_strip")) {
                     linker_gc_sections = true;
                 } else if (mem.eql(u8, arg, "-dead_strip_dylibs")) {
@@ -3746,6 +3758,7 @@ fn buildOutputType(
         .pagezero_size = pagezero_size,
         .headerpad_size = headerpad_size,
         .headerpad_max_install_names = headerpad_max_install_names,
+        .macho_bundle = macho_bundle,
         .dead_strip_dylibs = dead_strip_dylibs,
         .force_load_objc = force_load_objc,
         .discard_local_symbols = discard_local_symbols,
