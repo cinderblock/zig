@@ -1446,9 +1446,13 @@ fn reportUndefs(self: *MachO) !void {
     const tracy = trace(@src());
     defer tracy.end();
 
-    if (self.undefined_treatment == .suppress or
-        self.undefined_treatment == .dynamic_lookup) return;
     if (self.undefs.keys().len == 0) return; // Nothing to do
+
+    // `-undefined dynamic_lookup` (and `suppress`) leave undefined symbols for dyld
+    // to bind when the image is loaded, but the entry point is needed to write
+    // LC_MAIN, so it must be defined here whatever the treatment (as with ld64).
+    const entry_only = self.undefined_treatment == .suppress or
+        self.undefined_treatment == .dynamic_lookup;
 
     const gpa = self.base.comp.gpa;
     const diags = &self.base.comp.link_diags;
@@ -1457,7 +1461,11 @@ fn reportUndefs(self: *MachO) !void {
     // We will sort by name, and then by file to ensure deterministic output.
     var keys: std.ArrayList(SymbolResolver.Index) = try .initCapacity(gpa, self.undefs.keys().len);
     defer keys.deinit(gpa);
-    keys.appendSliceAssumeCapacity(self.undefs.keys());
+    for (self.undefs.keys(), self.undefs.values()) |key, notes| {
+        if (entry_only and notes != .entry) continue;
+        keys.appendAssumeCapacity(key);
+    }
+    if (keys.items.len == 0) return;
     self.sortGlobalSymbolsByName(keys.items);
 
     const refLessThan = struct {
