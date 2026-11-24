@@ -102,6 +102,9 @@
         .load_dynamic_library = .{
             .path = "load_dynamic_library",
         },
+        .macho_bundle = .{
+            .path = "macho_bundle",
+        },
         .windows_resources = .{
             .path = "windows_resources",
         },
