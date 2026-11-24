@@ -1,0 +1,91 @@
+# Fork CI for this fork's master: `zig cc -bundle` for macOS, and no linker
+# crash for an executable without _main under `-undefined dynamic_lookup`.
+# Builds the compiler on Linux, runs test/standalone/macho_bundle (which links
+# for macOS from Linux), then loads the bundles on a real Mac, including as a
+# Node.js addon.
+name: macho-bundle
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/deps
+          key: deps-${{ hashFiles('fork/build-linux.sh') }}
+
+      - name: Build the compiler
+        run: sh fork/build-linux.sh Debug
+
+      - name: Repro (crash and -bundle)
+        run: sh fork/repro.sh
+
+      - name: test/standalone/macho_bundle
+        working-directory: test/standalone/macho_bundle
+        run: |
+          ZIG_LIB_DIR="$GITHUB_WORKSPACE/lib" \
+          ZIG_GLOBAL_CACHE_DIR="$GITHUB_WORKSPACE/build-fork/global-cache" \
+          "$GITHUB_WORKSPACE/build-fork/stage3/bin/zig" build test --summary all
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Link bundles for the Mac job
+        run: |
+          set -eu
+          export ZIG_LIB_DIR="$PWD/lib" ZIG_GLOBAL_CACHE_DIR="$PWD/build-fork/global-cache"
+          ZIG="$PWD/build-fork/stage3/bin/zig"
+          NODE_INCLUDE="$(dirname "$(dirname "$(command -v node)")")/include/node"
+          mkdir -p bundles
+          for arch in aarch64 x86_64; do
+            "$ZIG" cc -target $arch-macos -bundle -undefined dynamic_lookup \
+              -o bundles/addon-$arch.node test/standalone/macho_bundle/addon.c
+            "$ZIG" cc -target $arch-macos -bundle -undefined dynamic_lookup -I"$NODE_INCLUDE" \
+              -o bundles/napi-$arch.node fork/napi_addon.c
+          done
+          cp test/standalone/macho_bundle/loader.c bundles/
+          file bundles/*.node
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundles
+          path: bundles/
+
+  macos:
+    needs: linux
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Inspect
+        run: |
+          file *.node
+          otool -hv addon-aarch64.node
+
+      - name: dlopen the arm64 bundle
+        run: |
+          cc -o loader loader.c
+          ./loader ./addon-aarch64.node
+
+      - name: Load the arm64 bundle as a Node addon
+        run: node -e "const v = require('./napi-aarch64.node').value(); if (v !== 42) throw new Error('value() returned ' + v); console.log('ok', process.version, process.arch)"
