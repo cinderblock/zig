@@ -499,6 +499,8 @@ pub const File = struct {
         headerpad_max_install_names: bool,
         /// Emit a bundle (MH_BUNDLE) instead of a dylib; requires a dynamic library output
         macho_bundle: bool,
+        /// The executable that will load the bundle (`-bundle_loader`)
+        macho_bundle_loader: ?Path,
         /// Remove dylibs that are unreachable by the entry point or exported symbols
         dead_strip_dylibs: bool,
         /// Force load all members of static archives that implement an

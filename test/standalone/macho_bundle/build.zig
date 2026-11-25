@@ -1,7 +1,8 @@
 //! `zig cc -bundle` produces a Mach-O bundle (MH_BUNDLE), the kind of image
-//! that Node.js addons and other plugins are, and linking an executable
-//! without `_main` under `-undefined dynamic_lookup` is a clean error rather
-//! than a linker crash.
+//! that Node.js addons and other plugins are; `-bundle_loader` binds a bundle's
+//! symbols to the program that loads it, as PostgreSQL extensions need; and
+//! linking an executable without `_main` under `-undefined dynamic_lookup` is a
+//! clean error rather than a linker crash.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -51,7 +52,52 @@ pub fn build(b: *std.Build) void {
         no_main.expectStdErrMatch("undefined symbol: _main");
         test_step.dependOn(&no_main.step);
 
-        // On a Mac of the same architecture, load the bundle and call into it.
+        // -bundle_loader: a PostgreSQL-style extension, linked against the program that
+        // loads it. hash_create() must come from that program, although libSystem has
+        // one too, and be bound to the main executable.
+        const host = b.addSystemCommand(&.{ b.graph.zig_exe, "cc", "-target", triple, "-rdynamic", "-o" });
+        host.setName(b.fmt("zig cc loader ({s})", .{triple}));
+        const host_exe = host.addOutputFileArg("loader");
+        host.addFileArg(b.path("loader.c"));
+
+        const pg = b.addSystemCommand(&.{ b.graph.zig_exe, "cc", "-target", triple, "-bundle", "-bundle_loader" });
+        pg.setName(b.fmt("zig cc -bundle -bundle_loader ({s})", .{triple}));
+        pg.addFileArg(host_exe);
+        pg.addArg("-o");
+        const pg_bundle = pg.addOutputFileArg("pg_addon.so");
+        pg.addFileArg(b.path("pg_addon.c"));
+
+        const check_pg = b.addRunArtifact(check);
+        check_pg.setName(b.fmt("check -bundle_loader ({s})", .{triple}));
+        check_pg.addFileArg(pg_bundle);
+        check_pg.addArgs(&.{ "--bound-to-executable", "_hash_create" });
+        test_step.dependOn(&check_pg.step);
+
+        const pg_wl = b.addSystemCommand(&.{ b.graph.zig_exe, "cc", "-target", triple, "-Wl,-bundle" });
+        pg_wl.setName(b.fmt("zig cc -Wl,-bundle_loader ({s})", .{triple}));
+        pg_wl.addPrefixedFileArg("-Wl,-bundle_loader,", host_exe);
+        pg_wl.addArg("-o");
+        const pg_wl_bundle = pg_wl.addOutputFileArg("pg_addon.so");
+        pg_wl.addFileArg(b.path("pg_addon.c"));
+
+        const check_pg_wl = b.addRunArtifact(check);
+        check_pg_wl.setName(b.fmt("check -Wl,-bundle_loader ({s})", .{triple}));
+        check_pg_wl.addFileArg(pg_wl_bundle);
+        check_pg_wl.addArgs(&.{ "--bound-to-executable", "_hash_create" });
+        test_step.dependOn(&check_pg_wl.step);
+
+        // -bundle_loader means nothing without -bundle (as with ld64).
+        const not_bundle = b.addSystemCommand(&.{ b.graph.zig_exe, "cc", "-target", triple, "-shared", "-bundle_loader" });
+        not_bundle.setName(b.fmt("zig cc -bundle_loader without -bundle ({s})", .{triple}));
+        not_bundle.addFileArg(host_exe);
+        not_bundle.addArg("-o");
+        _ = not_bundle.addOutputFileArg("pg_addon.dylib");
+        not_bundle.addFileArg(b.path("pg_addon.c"));
+        not_bundle.expectExitCode(1);
+        not_bundle.expectStdErrMatch("-bundle_loader can only be used with -bundle");
+        test_step.dependOn(&not_bundle.step);
+
+        // On a Mac of the same architecture, load the bundles and call into them.
         if (builtin.os.tag == .macos and std.mem.startsWith(u8, triple, @tagName(builtin.cpu.arch))) {
             const loader = b.addExecutable(.{
                 .name = "loader",
@@ -69,6 +115,11 @@ pub fn build(b: *std.Build) void {
             load.addFileArg(bundle);
             load.expectExitCode(0);
             test_step.dependOn(&load.step);
+
+            const load_pg = b.addRunArtifact(loader);
+            load_pg.addFileArg(pg_bundle);
+            load_pg.expectExitCode(0);
+            test_step.dependOn(&load_pg.step);
         }
     }
 }

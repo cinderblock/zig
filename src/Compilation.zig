@@ -1555,6 +1555,9 @@ pub const CreateOptions = struct {
     headerpad_max_install_names: bool = false,
     /// (Darwin) emit a bundle (MH_BUNDLE, loaded with dlopen) instead of a dylib
     macho_bundle: bool = false,
+    /// (Darwin) the executable that will load the bundle; the bundle's undefined
+    /// symbols are resolved against its exports and bound to the main executable
+    macho_bundle_loader: ?Cache.Path = null,
     /// (Darwin) remove dylibs that are unreachable by the entry point or exported symbols
     dead_strip_dylibs: bool = false,
     /// (Darwin) Force load all members of static archives that implement an Objective-C class or category
@@ -2229,6 +2232,7 @@ pub fn create(gpa: Allocator, arena: Allocator, io: Io, diag: *CreateDiagnostic,
             .headerpad_size = options.headerpad_size,
             .headerpad_max_install_names = options.headerpad_max_install_names,
             .macho_bundle = options.macho_bundle,
+            .macho_bundle_loader = options.macho_bundle_loader,
             .dead_strip_dylibs = options.dead_strip_dylibs,
             .force_load_objc = options.force_load_objc,
             .discard_local_symbols = options.discard_local_symbols,
@@ -3543,6 +3547,7 @@ fn addNonIncrementalStuffToCacheManifest(comp: *Compilation, man: *Cache.Manifes
     man.hash.addOptional(opts.headerpad_size);
     man.hash.add(opts.headerpad_max_install_names);
     man.hash.add(opts.macho_bundle);
+    try man.addInputPathOptional(opts.macho_bundle_loader, .{});
     man.hash.add(opts.dead_strip_dylibs);
     man.hash.add(opts.force_load_objc);
     man.hash.add(opts.discard_local_symbols);

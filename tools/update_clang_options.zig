@@ -539,6 +539,10 @@ const known_options = [_]KnownOpt{
         .ident = "bundle",
     },
     .{
+        .name = "bundle_loader",
+        .ident = "bundle_loader",
+    },
+    .{
         .name = "compress-debug-sections",
         .ident = "compress_debug_sections",
     },

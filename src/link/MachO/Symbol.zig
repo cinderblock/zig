@@ -99,11 +99,13 @@ pub fn getSize(symbol: Symbol, macho_file: *MachO) u64 {
     return file.object.symtab.items(.size)[symbol.nlist_idx];
 }
 
-pub fn getDylibOrdinal(symbol: Symbol, macho_file: *MachO) ?u16 {
+/// The dylib ordinal as dyld's bind opcodes take it: the dylib's load command index (from 1),
+/// or `BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE` for the `-bundle_loader` executable.
+pub fn getDylibOrdinal(symbol: Symbol, macho_file: *MachO) ?i16 {
     assert(symbol.flags.import);
     const file = symbol.getFile(macho_file) orelse return null;
     return switch (file) {
-        .dylib => |x| x.ordinal,
+        .dylib => |x| if (x.bundle_loader) macho.BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE else @intCast(x.ordinal),
         else => null,
     };
 }
@@ -284,10 +286,11 @@ pub fn setOutputSym(symbol: Symbol, macho_file: *MachO, out: *macho.nlist_64) vo
         //     ord
         // else
         //     macho.BIND_SPECIAL_DYLIB_SELF;
-        const ord: u16 = if (symbol.getDylibOrdinal(macho_file)) |ord|
-            ord
-        else
-            macho.BIND_SPECIAL_DYLIB_SELF;
+        const ord: u16 = if (symbol.getDylibOrdinal(macho_file)) |ord| switch (ord) {
+            // EXECUTABLE_ORDINAL in <mach-o/nlist.h>
+            macho.BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => 0xff,
+            else => @intCast(ord),
+        } else macho.BIND_SPECIAL_DYLIB_SELF;
         out.n_desc = @bitCast(macho.N_SYMBOL_RESOLVER * ord);
 
         if (symbol.flags.weak) {

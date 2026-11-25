@@ -1323,6 +1323,7 @@ pub const ClangCliParam = struct {
         weak_framework,
         headerpad_max_install_names,
         bundle,
+        bundle_loader,
         compress_debug_sections,
         install_name,
         undefined,

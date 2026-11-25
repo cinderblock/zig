@@ -24,6 +24,9 @@ reexport: bool,
 explicit: bool,
 hoisted: bool = true,
 referenced: bool = false,
+/// This is the `-bundle_loader` executable, not a dylib: no install name, and symbols
+/// bind to the main executable.
+bundle_loader: bool = false,
 
 output_symtab_ctx: MachO.SymtabCtx = .{},
 
@@ -132,7 +135,7 @@ fn parseBinary(self: *Dylib, macho_file: *MachO) !void {
         else => {},
     };
 
-    if (self.id == null) {
+    if (self.id == null and !self.bundle_loader) {
         try macho_file.reportParseError2(self.index, "missing LC_ID_DYLIB load command", .{});
         return error.MalformedDylib;
     }

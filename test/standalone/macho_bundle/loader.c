@@ -3,7 +3,14 @@
 #include <dlfcn.h>
 #include <stdio.h>
 
+// Called by addon.c (bound with -undefined dynamic_lookup).
 int host_value(void) {
+    return 41;
+}
+
+// Called by pg_addon.c (bound with -bundle_loader). libSystem exports a
+// different function of the same name.
+int hash_create(void) {
     return 41;
 }
 

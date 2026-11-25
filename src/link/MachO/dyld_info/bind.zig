@@ -190,7 +190,7 @@ pub const Bind = struct {
                     if (sym.flags.interposable) break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
                     if (sym.flags.import) {
                         // TODO: if (ctx.options.namespace == .flat) break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
-                        if (sym.getDylibOrdinal(ctx)) |ord| break :ord @bitCast(ord);
+                        if (sym.getDylibOrdinal(ctx)) |ord| break :ord ord;
                     }
                     if (ctx.undefined_treatment == .dynamic_lookup)
                         break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
@@ -573,7 +573,7 @@ pub const LazyBind = struct {
                 if (sym.flags.interposable) break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
                 if (sym.flags.import) {
                     // TODO: if (ctx.options.namespace == .flat) break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
-                    if (sym.getDylibOrdinal(ctx)) |ord| break :ord @bitCast(ord);
+                    if (sym.getDylibOrdinal(ctx)) |ord| break :ord ord;
                 }
                 if (ctx.undefined_treatment == .dynamic_lookup)
                     break :ord macho.BIND_SPECIAL_DYLIB_FLAT_LOOKUP;

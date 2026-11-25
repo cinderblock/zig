@@ -116,6 +116,13 @@ headerpad_max_install_names: bool,
 /// Emit a bundle (MH_BUNDLE, loaded with dlopen, no install name) instead of a dylib.
 /// Only set when the output is a dynamic library.
 bundle: bool,
+/// The executable named by `-bundle_loader` (only with `bundle`). The bundle's undefined
+/// symbols resolve against its exports ahead of any dylib, and bind to the main executable,
+/// as ld64 does.
+bundle_loader: ?Path,
+/// File index of `bundle_loader` once added. It is not in `dylibs`: it gets no load command
+/// and no ordinal of its own.
+bundle_loader_index: ?File.Index = null,
 /// Remove dylibs that are unreachable by the entry point or exported symbols.
 dead_strip_dylibs: bool,
 /// Treatment of undefined symbols
@@ -195,6 +202,10 @@ pub fn createEmpty(
         .headerpad_size = options.headerpad_size,
         .headerpad_max_install_names = options.headerpad_max_install_names,
         .bundle = options.macho_bundle and output_mode == .Lib and link_mode == .dynamic,
+        .bundle_loader = if (options.macho_bundle and output_mode == .Lib and link_mode == .dynamic)
+            options.macho_bundle_loader
+        else
+            null,
         .dead_strip_dylibs = options.dead_strip_dylibs,
         .install_name = options.install_name,
         .entitlements = options.entitlements,
@@ -388,6 +399,9 @@ pub fn flush(
     if (self.getZigObject()) |zo| try zo.flush(self, tid);
     if (self.base.isStaticLib()) return relocatable.flushStaticLib(self, comp);
     if (self.base.isObject()) return relocatable.flushObject(self, comp);
+
+    if (self.bundle_loader) |path| self.addBundleLoader(path) catch |err|
+        diags.addParseError(path, "failed to read bundle loader: {t}", .{err});
 
     for (self.all_inputs.items) |input| {
         self.classifyInputFile(input) catch |err|
@@ -585,6 +599,9 @@ fn dumpArgv(self: *MachO, comp: *Compilation) !void {
 
         if (self.bundle) {
             try argv.append(arena, "-bundle");
+            if (self.bundle_loader) |path| {
+                try argv.appendSlice(arena, &.{ "-bundle_loader", try path.toString(arena) });
+            }
         } else if (self.base.isDynLib()) {
             try argv.append(arena, "-dylib");
 
@@ -832,6 +849,7 @@ pub fn parseInputFiles(self: *MachO) !void {
         for (self.objects.items) |index| {
             parseInputFileWorker(self, self.getFile(index).?);
         }
+        if (self.bundle_loader_index) |index| parseInputFileWorker(self, self.getFile(index).?);
         for (self.dylibs.items) |index| {
             parseInputFileWorker(self, self.getFile(index).?);
         }
@@ -906,6 +924,38 @@ fn addDylib(self: *MachO, lib: SystemLib, explicit: bool, handle: File.HandleInd
     try self.dylibs.append(gpa, index);
 
     return index;
+}
+
+fn addBundleLoader(self: *MachO, path: Path) !void {
+    const comp = self.base.comp;
+    const io = comp.io;
+    const gpa = comp.gpa;
+
+    const file = try path.root_dir.handle.openFile(io, path.sub_path, .{});
+    const fh = try self.addFileHandle(file);
+    const fat_arch = try self.parseFatFile(file, path);
+    const offset = if (fat_arch) |fa| fa.offset else 0;
+    const header = try readMachHeader(io, file, offset);
+    if (header.magic != macho.MH_MAGIC_64 or header.filetype != macho.MH_EXECUTE) return error.NotAnExecutable;
+
+    const index: File.Index = @intCast(try self.files.addOne(gpa));
+    self.files.set(index, .{ .dylib = .{
+        .offset = offset,
+        .file_handle = fh,
+        .tag = .dylib,
+        .path = .{
+            .root_dir = path.root_dir,
+            .sub_path = try gpa.dupe(u8, path.sub_path),
+        },
+        .index = index,
+        .needed = false,
+        .weak = false,
+        .reexport = false,
+        .explicit = true,
+        .umbrella = index,
+        .bundle_loader = true,
+    } });
+    self.bundle_loader_index = index;
 }
 
 fn addTbd(self: *MachO, lib: SystemLib, explicit: bool, handle: File.HandleIndex) !File.Index {
@@ -1181,6 +1231,7 @@ pub fn resolveSymbols(self: *MachO) !void {
     if (self.getZigObject()) |zo| try zo.asFile().resolveSymbols(self);
     // Resolve symbols on the set of all objects and shared objects (even if some are unneeded).
     for (self.objects.items) |index| try self.getFile(index).?.resolveSymbols(self);
+    if (self.bundle_loader_index) |index| try self.getFile(index).?.resolveSymbols(self);
     for (self.dylibs.items) |index| try self.getFile(index).?.resolveSymbols(self);
     if (self.getInternalObject()) |obj| try obj.resolveSymbols(self);
 
@@ -1204,6 +1255,7 @@ pub fn resolveSymbols(self: *MachO) !void {
     // Re-resolve the symbols.
     if (self.getZigObject()) |zo| try zo.resolveSymbols(self);
     for (self.objects.items) |index| try self.getFile(index).?.resolveSymbols(self);
+    if (self.bundle_loader_index) |index| try self.getFile(index).?.resolveSymbols(self);
     for (self.dylibs.items) |index| try self.getFile(index).?.resolveSymbols(self);
     if (self.getInternalObject()) |obj| try obj.resolveSymbols(self);
 
@@ -1421,6 +1473,7 @@ fn scanRelocs(self: *MachO) !void {
     for (self.objects.items) |index| {
         try self.getFile(index).?.createSymbolIndirection(self);
     }
+    if (self.bundle_loader_index) |index| try self.getFile(index).?.createSymbolIndirection(self);
     for (self.dylibs.items) |index| {
         try self.getFile(index).?.createSymbolIndirection(self);
     }
@@ -1881,6 +1934,7 @@ fn calcSectionSizes(self: *MachO) !void {
         for (self.objects.items) |index| {
             File.calcSymtabSize(self.getFile(index).?, self);
         }
+        if (self.bundle_loader_index) |index| File.calcSymtabSize(self.getFile(index).?, self);
         for (self.dylibs.items) |index| {
             File.calcSymtabSize(self.getFile(index).?, self);
         }
@@ -2416,6 +2470,7 @@ fn writeSectionsAndUpdateLinkeditSizes(self: *MachO) !void {
         for (self.objects.items) |index| {
             File.writeSymtab(self.getFile(index).?, self, self);
         }
+        if (self.bundle_loader_index) |index| File.writeSymtab(self.getFile(index).?, self, self);
         for (self.dylibs.items) |index| {
             File.writeSymtab(self.getFile(index).?, self, self);
         }
@@ -2668,10 +2723,11 @@ fn calcSymtabSize(self: *MachO) !void {
 
     const gpa = self.base.comp.gpa;
 
-    var files: std.ArrayList(File.Index) = try .initCapacity(gpa, self.objects.items.len + self.dylibs.items.len + 2);
+    var files: std.ArrayList(File.Index) = try .initCapacity(gpa, self.objects.items.len + self.dylibs.items.len + 3);
     defer files.deinit(gpa);
     if (self.zig_object) |index| files.appendAssumeCapacity(index);
     for (self.objects.items) |index| files.appendAssumeCapacity(index);
+    if (self.bundle_loader_index) |index| files.appendAssumeCapacity(index);
     for (self.dylibs.items) |index| files.appendAssumeCapacity(index);
     if (self.internal_object) |index| files.appendAssumeCapacity(index);
 

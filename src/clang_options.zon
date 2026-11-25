@@ -848,7 +848,11 @@
 .{ .name = "bind_at_load" },
 .{ .name = "building-pch-with-obj" },
 .{ .name = "bundle", .ze = .bundle },
-.{ .name = "bundle_loader", .syntax = .separate },
+.{
+    .name = "bundle_loader",
+    .ze = .bundle_loader,
+    .syntax = .separate,
+},
 .{ .name = "c", .ze = .c },
 .{ .name = "c-isystem", .syntax = .separate },
 .{ .name = "canonical-prefixes" },
