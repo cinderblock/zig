@@ -56,9 +56,14 @@ jobs:
               -o bundles/addon-$arch.node test/standalone/macho_bundle/addon.c
             "$ZIG" cc -target $arch-macos -bundle -undefined dynamic_lookup -I"$NODE_INCLUDE" \
               -o bundles/napi-$arch.node fork/napi_addon.c
+            # A PostgreSQL-style extension linked against the program that loads it.
+            "$ZIG" cc -target $arch-macos -rdynamic \
+              -o bundles/host-$arch test/standalone/macho_bundle/loader.c
+            "$ZIG" cc -target $arch-macos -bundle -bundle_loader bundles/host-$arch \
+              -o bundles/pg-$arch.so test/standalone/macho_bundle/pg_addon.c
           done
           cp test/standalone/macho_bundle/loader.c bundles/
-          file bundles/*.node
+          file bundles/*.node bundles/*.so bundles/host-*
 
       - uses: actions/upload-artifact@v7
         with:
@@ -79,13 +84,22 @@ jobs:
 
       - name: Inspect
         run: |
-          file *.node
+          file *.node *.so host-*
           otool -hv addon-aarch64.node
+          nm -m pg-aarch64.so | grep hash_create
 
       - name: dlopen the arm64 bundle
         run: |
           cc -o loader loader.c
           ./loader ./addon-aarch64.node
+
+      # hash_create must come from the loading program, not from libSystem's hash_create.
+      - name: dlopen the arm64 -bundle_loader bundle
+        run: |
+          cc -o loader loader.c
+          ./loader ./pg-aarch64.so
+          chmod +x host-aarch64
+          ./host-aarch64 ./pg-aarch64.so
 
       - name: Load the arm64 bundle as a Node addon
         run: node -e "const v = require('./napi-aarch64.node').value(); if (v !== 42) throw new Error('value() returned ' + v); console.log('ok', process.version, process.arch)"
