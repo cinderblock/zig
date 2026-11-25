@@ -1,0 +1,129 @@
+# Release builds of this fork. Cross-compiles the compiler for each host from
+# Linux (fork/release.sh, pinned devkits in fork/deps.sh), then runs
+# test/standalone/macho_bundle with each build on a runner of its own host.
+# A run started by pushing a fork-* tag (e.g. fork-2026-11-25) publishes a
+# GitHub release with the archives and SHA256SUMS; a manual run only builds
+# and tests.
+name: release
+
+on:
+  push:
+    tags: ['fork-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: version
+        run: echo "version=$(sh fork/version.sh)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [x86_64-linux, aarch64-linux, aarch64-macos, x86_64-windows, aarch64-windows]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/deps
+          key: deps-${{ matrix.host }}-${{ hashFiles('fork/deps.sh') }}
+
+      - name: Build and package
+        run: sh fork/release.sh ${{ matrix.host }} '${{ needs.version.outputs.version }}' dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zig-${{ matrix.host }}
+          path: dist/
+          if-no-files-found: error
+
+  test:
+    needs: [version, build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { host: x86_64-linux, runner: ubuntu-latest }
+          - { host: aarch64-linux, runner: ubuntu-24.04-arm }
+          - { host: aarch64-macos, runner: macos-latest }
+          - { host: x86_64-windows, runner: windows-latest }
+          - { host: aarch64-windows, runner: windows-11-arm }
+    defaults:
+      run:
+        shell: bash
+    env:
+      NAME: zig-${{ matrix.host }}-${{ needs.version.outputs.version }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: zig-${{ matrix.host }}
+          path: dist
+
+      - name: Unpack
+        run: |
+          set -eu
+          mkdir unpacked
+          case "${{ matrix.host }}" in
+            *-windows) 7z x -bd -ounpacked "dist/$NAME.zip" > /dev/null ;;
+            *) tar -xJf "dist/$NAME.tar.xz" -C unpacked ;;
+          esac
+          echo "ZIG=$PWD/unpacked/$NAME/zig" >> "$GITHUB_ENV"
+
+      - name: zig version
+        run: |
+          set -eu
+          actual="$("$ZIG" version)"
+          echo "$actual"
+          [ "$actual" = "$VERSION" ]
+
+      - name: test/standalone/macho_bundle
+        working-directory: test/standalone/macho_bundle
+        run: |
+          ZIG_GLOBAL_CACHE_DIR="$RUNNER_TEMP/zig-global-cache" "$ZIG" build test --summary all
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/fork-')
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: zig-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -eu
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          sed "s/@VERSION@/$VERSION/g; s/@COMMIT@/$GITHUB_SHA/g" ../fork/release-notes.md > ../notes.md
+          gh release create "$GITHUB_REF_NAME" --title "Zig $VERSION (Mach-O bundle fork)" \
+            --notes-file ../notes.md -- *

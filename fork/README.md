@@ -33,13 +33,14 @@ file addon.node   # upstream: crash or "data"; this fork: Mach-O 64-bit arm64 bu
 
 ## Building
 
-There are no prebuilt binaries yet. Clone `master` and build it like upstream Zig (see the top-level [README](../README.md)), or on x86_64 Linux run `sh fork/build-linux.sh ReleaseFast`.
+Prebuilt binaries for Linux, macOS on Apple silicon, and Windows are on the [releases page](https://github.com/cinderblock/zig/releases). To build it yourself, clone this fork's `master` branch and build it like upstream Zig (see the top-level [README](../README.md)), or on x86_64 Linux run `sh fork/build-linux.sh ReleaseFast`.
 
 ## What's here
 
 - The fix ([compare](https://github.com/cinderblock/zig/compare/upstream-master...master)): the commits on `master` above `upstream-master` (the Codeberg `master` they're based on). `master` also includes a no-op merge of the last commit from GitHub's old `ziglang/zig` mirror, where this fork started.
 - `test/standalone/macho_bundle`: cross-links bundles for `aarch64-macos` and `x86_64-macos` from any host with both `zig cc` and `std.Build`; checks the Mach-O headers, `-bundle_loader` bindings, and the no-`_main` error; and `dlopen`s the bundles on macOS.
-- `fork/build-linux.sh`: builds the compiler on x86_64 Linux, from a recent master Zig plus the LLVM devkit Zig's CI uses.
+- `fork/build-linux.sh`: builds the compiler on x86_64 Linux using a recent upstream Zig `master` build and the LLVM devkit Zig's CI uses. `fork/deps.sh` pins both by SHA-256.
+- `fork/release.sh`, `fork/version.sh`, `fork/release-notes.md`, and `.github/workflows/release.yml`: release automation. Pushing a `fork-*` tag builds binaries for every supported platform on Linux, runs `test/standalone/macho_bundle` with each build on its own platform, and publishes a GitHub release.
 - `fork/repro.sh`: the repro, run against that build.
 - `.github/workflows/macho-bundle.yml`: builds on Linux, runs the test, then loads the bundles on a GitHub macOS runner, with `dlopen` and as a Node.js addon.
 

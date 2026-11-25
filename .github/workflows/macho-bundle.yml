@@ -25,7 +25,7 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: ~/deps
-          key: deps-${{ hashFiles('fork/build-linux.sh') }}
+          key: deps-${{ hashFiles('fork/deps.sh') }}
 
       - name: Build the compiler
         run: sh fork/build-linux.sh Debug
