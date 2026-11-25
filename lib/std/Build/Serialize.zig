@@ -142,6 +142,7 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                             .force_load_objc = c.force_load_objc,
                             .discard_local_symbols = c.discard_local_symbols,
                             .mingw_unicode_entry_point = c.mingw_unicode_entry_point,
+                            .macho_bundle = c.macho_bundle,
                         },
                         .flags2 = .{
                             .pie = .init(c.pie),
@@ -199,6 +200,7 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                             .error_limit = c.error_limit != null,
                             .install_name = c.install_name != null,
                             .entitlements = c.entitlements != null,
+                            .macho_bundle_loader = c.macho_bundle_loader != null,
                             .expect_errors = if (c.expect_errors) |x| switch (x) {
                                 .contains => .contains,
                                 .exact => .exact,
@@ -229,6 +231,7 @@ pub fn write(b: *std.Build, wc: *Configuration.Wip, writer: *std.Io.Writer) !voi
                         .win32_manifest = .{ .value = try s.addOptionalLazyPath(c.win32_manifest) },
                         .win32_module_definition = .{ .value = try s.addOptionalLazyPath(c.win32_module_definition) },
                         .entitlements = .{ .value = try s.addOptionalLazyPath(c.entitlements) },
+                        .macho_bundle_loader = .{ .value = try s.addOptionalLazyPath(c.macho_bundle_loader) },
                         .version = .{ .value = try s.addOptionalSemVer(c.version) },
                         .install_name = .{ .value = try s.addOptionalString(c.install_name) },
                         .initial_memory = .{ .value = c.initial_memory },

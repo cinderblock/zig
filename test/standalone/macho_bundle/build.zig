@@ -1,6 +1,7 @@
 //! `zig cc -bundle` produces a Mach-O bundle (MH_BUNDLE), the kind of image
 //! that Node.js addons and other plugins are; `-bundle_loader` binds a bundle's
-//! symbols to the program that loads it, as PostgreSQL extensions need; and
+//! symbols to the program that loads it, as PostgreSQL extensions need; both
+//! also work from std.Build (`macho_bundle`, `setBundleLoader`); and
 //! linking an executable without `_main` under `-undefined dynamic_lookup` is a
 //! clean error rather than a linker crash.
 
@@ -97,6 +98,45 @@ pub fn build(b: *std.Build) void {
         not_bundle.expectStdErrMatch("-bundle_loader can only be used with -bundle");
         test_step.dependOn(&not_bundle.step);
 
+        // The same through std.Build: `macho_bundle` and `setBundleLoader`.
+        const target = b.resolveTargetQuery(std.Target.Query.parse(.{ .arch_os_abi = triple }) catch unreachable);
+
+        const build_addon = b.addLibrary(.{
+            .name = "addon",
+            .linkage = .dynamic,
+            .root_module = b.createModule(.{ .target = target, .optimize = .debug, .link_libc = true }),
+        });
+        build_addon.root_module.addCSourceFile(.{ .file = b.path("addon.c"), .flags = &.{} });
+        build_addon.macho_bundle = true;
+        build_addon.linker_allow_shlib_undefined = true;
+
+        const check_build_addon = b.addRunArtifact(check);
+        check_build_addon.setName(b.fmt("check std.Build macho_bundle ({s})", .{triple}));
+        check_build_addon.addArtifactArg(build_addon);
+        test_step.dependOn(&check_build_addon.step);
+
+        const build_loader = b.addExecutable(.{
+            .name = "loader",
+            .root_module = b.createModule(.{ .target = target, .optimize = .debug, .link_libc = true }),
+        });
+        build_loader.root_module.addCSourceFile(.{ .file = b.path("loader.c"), .flags = &.{} });
+        build_loader.rdynamic = true;
+
+        const build_pg = b.addLibrary(.{
+            .name = "pg_addon",
+            .linkage = .dynamic,
+            .root_module = b.createModule(.{ .target = target, .optimize = .debug, .link_libc = true }),
+        });
+        build_pg.root_module.addCSourceFile(.{ .file = b.path("pg_addon.c"), .flags = &.{} });
+        build_pg.macho_bundle = true;
+        build_pg.setBundleLoader(build_loader.getEmittedBin());
+
+        const check_build_pg = b.addRunArtifact(check);
+        check_build_pg.setName(b.fmt("check std.Build setBundleLoader ({s})", .{triple}));
+        check_build_pg.addArtifactArg(build_pg);
+        check_build_pg.addArgs(&.{ "--bound-to-executable", "_hash_create" });
+        test_step.dependOn(&check_build_pg.step);
+
         // On a Mac of the same architecture, load the bundles and call into them.
         if (builtin.os.tag == .macos and std.mem.startsWith(u8, triple, @tagName(builtin.cpu.arch))) {
             const loader = b.addExecutable(.{
@@ -120,6 +160,16 @@ pub fn build(b: *std.Build) void {
             load_pg.addFileArg(pg_bundle);
             load_pg.expectExitCode(0);
             test_step.dependOn(&load_pg.step);
+
+            const load_build_addon = b.addRunArtifact(loader);
+            load_build_addon.addArtifactArg(build_addon);
+            load_build_addon.expectExitCode(0);
+            test_step.dependOn(&load_build_addon.step);
+
+            const load_build_pg = b.addRunArtifact(build_loader);
+            load_build_pg.addArtifactArg(build_pg);
+            load_build_pg.expectExitCode(0);
+            test_step.dependOn(&load_build_pg.step);
         }
     }
 }

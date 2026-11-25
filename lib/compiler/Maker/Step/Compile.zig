@@ -701,7 +701,8 @@ fn lowerZigArgs(
             };
 
             const os_tag = root_module_target.flags.os_tag.unwrap().?;
-            if (os_tag.isDarwin()) {
+            // A bundle has no install name.
+            if (os_tag.isDarwin() and !conf_comp.flags.macho_bundle) {
                 const abi = root_module_target.flags.abi.unwrap().?;
                 zig_args.addManyAsArrayAssumeCapacity(2).* = .{
                     "-install_name",
@@ -730,6 +731,12 @@ fn lowerZigArgs(
     }
     try addBool(gpa, zig_args, "-headerpad_max_install_names", conf_comp.flags.headerpad_max_install_names);
     try addBool(gpa, zig_args, "-dead_strip_dylibs", conf_comp.flags.dead_strip_dylibs);
+    try addBool(gpa, zig_args, "-bundle", conf_comp.flags.macho_bundle);
+    if (conf_comp.macho_bundle_loader.value) |bundle_loader| {
+        (try zig_args.addManyAsArray(gpa, 2)).* = .{
+            "-bundle_loader", try maker.resolveLazyPathIndexAbs(arena, bundle_loader, compile_index),
+        };
+    }
     try addBool(gpa, zig_args, "-ObjC", conf_comp.flags.force_load_objc);
     try addBool(gpa, zig_args, "--discard-all", conf_comp.flags.discard_local_symbols);
 

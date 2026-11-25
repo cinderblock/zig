@@ -745,7 +745,9 @@ const compile_usage =
     \\  -headerpad_max_install_names   (Darwin) set enough space as if all paths were MAXPATHLEN
     \\  -dead_strip                    (Darwin) remove functions and data that are unreachable by the entry point or exported symbols
     \\  -dead_strip_dylibs             (Darwin) remove dylibs that are unreachable by the entry point or exported symbols
-    \\  -ObjC                          (Darwin) force load all members of static archives that implement an Objective-C class or category
+    \\  -bundle                        (Darwin) with build-lib -dynamic, output a bundle (MH_BUNDLE) instead of a dylib
+    \\  -bundle_loader [path]          (Darwin) resolve the bundle's undefined symbols against this executable
+    \\  -ObjC                        (Darwin) force load all members of static archives that implement an Objective-C class or category
     \\  --import-memory                (WebAssembly) import memory from the environment
     \\  --export-memory                (WebAssembly) export memory to the host (Default unless --import-memory used)
     \\  --import-symbols               (WebAssembly) import missing symbols from the host environment
@@ -1316,6 +1318,10 @@ fn buildOutputType(
                         linker_gc_sections = true;
                     } else if (mem.eql(u8, arg, "-dead_strip_dylibs")) {
                         dead_strip_dylibs = true;
+                    } else if (mem.eql(u8, arg, "-bundle")) {
+                        macho_bundle = true;
+                    } else if (mem.eql(u8, arg, "-bundle_loader")) {
+                        macho_bundle_loader = args_iter.nextOrFatal();
                     } else if (mem.eql(u8, arg, "-ObjC")) {
                         force_load_objc = true;
                     } else if (mem.eql(u8, arg, "-T") or mem.eql(u8, arg, "--script")) {
@@ -3639,6 +3645,11 @@ fn buildOutputType(
     }
     if (macho_bundle_loader != null and !macho_bundle) {
         fatal("-bundle_loader can only be used with -bundle", .{});
+    }
+    if (macho_bundle and !clang_passthrough_mode and (create_module.resolved_options.output_mode != .Lib or
+        create_module.resolved_options.link_mode != .dynamic))
+    {
+        fatal("-bundle can only be used with a dynamic library", .{});
     }
 
     const cache_mode: Compilation.CacheMode = b: {

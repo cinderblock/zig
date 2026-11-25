@@ -168,6 +168,17 @@ headerpad_max_install_names: bool = false,
 /// (Darwin) Remove dylibs that are unreachable by the entry point or exported symbols.
 dead_strip_dylibs: bool = false,
 
+/// (Darwin) Link a bundle (`MH_BUNDLE`), a plugin loaded with `dlopen`, instead
+/// of a dylib. Needs a dynamic library: `kind = .lib` and `linkage = .dynamic`.
+/// Bundles have no install name. The output keeps the dylib's file name; set
+/// `dest_sub_path` on the install step to rename it.
+macho_bundle: bool = false,
+
+/// (Darwin) The executable that will load this bundle (`-bundle_loader`): the
+/// bundle's undefined symbols resolve against it ahead of any dylib and bind
+/// to the main executable. Needs `macho_bundle`. Set with `setBundleLoader`.
+macho_bundle_loader: ?LazyPath = null,
+
 /// (Darwin) Force load all members of static archives that implement an Objective-C class or category
 force_load_objc: bool = false,
 
@@ -577,6 +588,14 @@ pub fn setLinkerScript(compile: *Compile, source: LazyPath) void {
     const graph = compile.step.owner.graph;
     compile.linker_script = source.dupe(graph);
     source.addStepDependencies(&compile.step);
+}
+
+/// (Darwin) Sets `macho_bundle_loader`, typically to another artifact's
+/// `getEmittedBin()`.
+pub fn setBundleLoader(compile: *Compile, executable: LazyPath) void {
+    const graph = compile.step.owner.graph;
+    compile.macho_bundle_loader = executable.dupe(graph);
+    executable.addStepDependencies(&compile.step);
 }
 
 pub fn setVersionScript(compile: *Compile, source: LazyPath) void {

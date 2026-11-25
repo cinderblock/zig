@@ -773,6 +773,7 @@ pub const Step = extern struct {
         win32_manifest: Storage.FlagOptional(.flags3, .win32_manifest, LazyPath.Index),
         win32_module_definition: Storage.FlagOptional(.flags3, .win32_module_definition, LazyPath.Index),
         entitlements: Storage.FlagOptional(.flags4, .entitlements, LazyPath.Index),
+        macho_bundle_loader: Storage.FlagOptional(.flags4, .macho_bundle_loader, LazyPath.Index),
         version: Storage.FlagOptional(.flags3, .version, String), // semantic version string
         entry: Storage.EnumOptional(.flags3, .entry, .symbol_name, String),
         install_name: Storage.FlagOptional(.flags4, .install_name, String),
@@ -1016,7 +1017,8 @@ pub const Step = extern struct {
             force_load_objc: bool,
             discard_local_symbols: bool,
             mingw_unicode_entry_point: bool,
-            _: u2 = 0,
+            macho_bundle: bool,
+            _: u1 = 0,
         };
 
         pub const Flags2 = bitpack struct(u32) {
@@ -1070,6 +1072,7 @@ pub const Step = extern struct {
             error_limit: bool,
             install_name: bool,
             entitlements: bool,
+            macho_bundle_loader: bool,
             expect_errors: ExpectErrors.Tag,
             linker_script: bool,
             version_script: bool,
@@ -1085,7 +1088,7 @@ pub const Step = extern struct {
             incremental: DefaultingBool,
             function_sections: DefaultingBool,
             data_sections: DefaultingBool,
-            _: u3 = 0,
+            _: u2 = 0,
         };
 
         pub fn isDynamicLibrary(compile: *const Compile) bool {
